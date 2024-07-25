@@ -299,6 +299,7 @@ void initialiseAll(void)
     {
       //First time running on this board
       resetConfigPages();
+      configPage4.triggerTeeth = 4; //Avoiddiv by 0 when start decoders
       setPinMapping(3); //Force board to v0.4
     }
     else { setPinMapping(configPage2.pinMapping); }
@@ -368,15 +369,6 @@ void initialiseAll(void)
     if(configPage2.vssMode > 1) // VSS modes 2 and 3 are interrupt drive (Mode 1 is CAN)
     {
       attachInterrupt(digitalPinToInterrupt(pinVSS), vssPulse, RISING);
-    }
-    //As above but for knock pulses
-    if(configPage10.knock_mode == KNOCK_MODE_DIGITAL)
-    {
-      if(configPage10.knock_pullup) { pinMode(configPage10.knock_pin, INPUT_PULLUP); }
-      else { pinMode(configPage10.knock_pin, INPUT); }
-
-      if(configPage10.knock_trigger == KNOCK_TRIGGER_HIGH) { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, RISING); }
-      else { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, FALLING); }
     }
 
     //Once the configs have been loaded, a number of one time calculations can be completed
@@ -735,7 +727,7 @@ void initialiseAll(void)
               channel8InjDegrees = channel4InjDegrees;
             #else
               //This is an invalid config as there are not enough outputs to support sequential + staging
-              //Put the staging output to the non-existent channel 5
+              //Put the staging output to the non-existant channel 5
               #if (INJ_CHANNELS >= 5)
               maxInjOutputs = 5;
               channel5InjDegrees = channel1InjDegrees;
@@ -1376,8 +1368,6 @@ void setPinMapping(byte boardID)
   //Force set defaults. Will be overwritten below if needed.
   injectorOutputControl = OUTPUT_CONTROL_DIRECT;
   ignitionOutputControl = OUTPUT_CONTROL_DIRECT;
-
-  if( configPage4.triggerTeeth == 0 ) { configPage4.triggerTeeth = 4; } //Avoid potential divide by 0 when starting decoders
 
   switch (boardID)
   {
@@ -2383,7 +2373,7 @@ void setPinMapping(byte boardID)
       pinInjector5 = 9; //CS for MC33810 2
       pinInjector6 = 9; //CS for MC33810 3
 
-      //Dummy pins, without these pin 0 (Serial1 RX) gets overwritten
+      //Dummy pins, without thes pin 0 (Serial1 RX) gets overwritten
       pinCoil1 = 40;
       pinCoil2 = 41;
       /*
@@ -2395,7 +2385,7 @@ void setPinMapping(byte boardID)
       
       pinTrigger = 19; //The CAS pin
       pinTrigger2 = 18; //The Cam Sensor pin
-      pinTrigger3 = 22; //Uses one of the protected spare digital inputs. This must be set or Serial1 (Pin 0) gets broken
+      pinTrigger3 = 22; //Uses one of the protected spare digitial inputs. This must be set or Serial1 (Pin 0) gets broken
       pinFlex = A16; // Flex sensor
       pinMAP = A1; //MAP sensor pin
       pinBaro = A0; //Baro sensor pin
@@ -3051,16 +3041,6 @@ void setPinMapping(byte boardID)
       pinMode(pinBat, INPUT);
       pinMode(pinBaro, INPUT);
     #endif
-  #elif defined(CORE_TEENSY41)
-    //Teensy 4.1 has a weak pull down resistor that needs to be disabled for all analog pins. 
-    pinMode(pinMAP, INPUT_DISABLE);
-    pinMode(pinO2, INPUT_DISABLE);
-    pinMode(pinO2_2, INPUT_DISABLE);
-    pinMode(pinTPS, INPUT_DISABLE);
-    pinMode(pinIAT, INPUT_DISABLE);
-    pinMode(pinCLT, INPUT_DISABLE);
-    pinMode(pinBat, INPUT_DISABLE);
-    pinMode(pinBaro, INPUT_DISABLE);
   #endif
 
   //Each of the below are only set when their relevant function is enabled. This can help prevent pin conflicts that users aren't aware of with unused functions
@@ -3406,21 +3386,6 @@ void initialiseTriggers(void)
       attachInterrupt(triggerInterrupt2, triggerSecondaryHandler, secondaryTriggerEdge);
       break;
 
-    case DECODER_HONDA_J32:
-      triggerSetup_HondaJ32();
-      triggerHandler = triggerPri_HondaJ32;
-      triggerSecondaryHandler = triggerSec_HondaJ32;
-      getRPM = getRPM_HondaJ32;
-      getCrankAngle = getCrankAngle_HondaJ32;
-      triggerSetEndTeeth = triggerSetEndTeeth_HondaJ32;
-
-      primaryTriggerEdge = RISING; // Don't honor the config, always use rising edge 
-      secondaryTriggerEdge = RISING; // Unused
-
-      attachInterrupt(triggerInterrupt, triggerHandler, primaryTriggerEdge);
-      attachInterrupt(triggerInterrupt2, triggerSecondaryHandler, secondaryTriggerEdge);  // Suspect this line is not needed
-      break;
-
     case DECODER_MIATA_9905:
       triggerSetup_Miata9905();
       triggerHandler = triggerPri_Miata9905;
@@ -3712,6 +3677,20 @@ void initialiseTriggers(void)
       getRPM = getRPM_SuzukiK6A;
       getCrankAngle = getCrankAngle_SuzukiK6A;
       triggerSetEndTeeth = triggerSetEndTeeth_SuzukiK6A;
+
+    case DECODER_STATIONARY:
+      // Stationary Engine. Eg. Honda GX390
+      triggerSetup_Stationary();
+      triggerHandler = triggerPri_Stationary;
+      getRPM = getRPM_Stationary;
+      getCrankAngle = getCrankAngle_Stationary;
+      triggerSetEndTeeth = triggerSetEndTeeth_Stationary;
+
+      if(configPage4.TrigEdge == 0) { primaryTriggerEdge = RISING; } // Attach the crank trigger wheel interrupt (Hall sensor drags to ground when triggering)
+      else { primaryTriggerEdge = FALLING; }
+
+      attachInterrupt(triggerInterrupt, triggerHandler, primaryTriggerEdge);
+      break;
 
 
       if(configPage4.TrigEdge == 0) { primaryTriggerEdge = RISING; } // Attach the crank trigger wheel interrupt (Hall sensor drags to ground when triggering)
